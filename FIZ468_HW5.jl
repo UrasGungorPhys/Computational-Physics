@@ -16,15 +16,20 @@ begin
 	Random.seed!(468)
 end
 
+# ╔═╡ 3fd6bfea-fd1e-4b1f-813e-2780f9d3a2e0
+md"""
+## Drawing from $e^{-x}$
+"""
+
 # ╔═╡ 2982b49d-5ee8-43d0-a6e0-31287b1f5db6
 begin
 	x0 = 0
 	xf = 5
-	N = 1000
-	xvals = range(x0,xf,N)
+	N0 = 1000
+	xvals = range(x0,xf,N0)
 
 	results = []
-	while length(results) < N
+	while length(results) < N0
 		candidate = rand() * (xf - x0) + x0
 		to_add_or_not_to_add = rand()
 		if to_add_or_not_to_add <= d(candidate)
@@ -36,18 +41,129 @@ begin
 	plot!(xvals, d.(xvals), legend=false)
 end
 
-# ╔═╡ 9cb10a87-1b4b-45c9-9f3c-5b567a0816d1
-begin
-	positionsx = rand(10)
-	positionsy = rand(10)
-	positions = cat(positionsx, positionsy, dims=2)
-	scatter(positions[:, 1], positions[:, 2])
+# ╔═╡ 1b74b1c6-7ac1-451c-a375-c4dc48f91902
+md"""
+## An application
 
-	for i in range(1, 10)
-		positions[i,1] += 0.1
-	end
-	scatter!(positions[:, 1], positions[:, 2])
+The $e^{-x}$ distribution makes higher valued picks much rarer than lower ones, it is a good distribution of mass for space dust, consisting of many tiny massed particles with a few massive ones sprinkled in. 
+
+So we can use this distribution to pick masses for N particles, and create a mini N-body gravity simulation:
+"""
+
+# ╔═╡ 4f4434eb-72c0-4f4c-bae6-f11218e6802b
+begin
+	
+    G = 6.6743 * 10^-1.5  # Gravitational Constant, scaled up or down
+
+    # Drawing masses from e^-x distribution
+    function d1(m)
+        return ℯ^(-10*m)  # -10 to make sure
+        # the max mass objects are quite rare
+    end
+
+    m0 = 0  # minimum mass, kg
+    mf = 2  # maximum mass, kg
+    N = 50  # number of particles
+    # xvals = range(m0,mf,N)  # if mass plot needed
+    print("Distributing masses...\n")
+    masses = []
+    while length(masses) < N
+        candidate = rand() * (mf - m0) + m0
+        to_add_or_not_to_add = rand()
+        if to_add_or_not_to_add <= d1(candidate)
+            append!(masses, candidate)
+        end
+    end
+    print("Done.\n")
+    # histogram(masses, normalize=true)  # if mass plot needed
+    # plot!(xvals, d.(xvals))  # if mass plot needed
+
+    # Defining time
+    ts = range(0, 100, 10000)  # seconds?
+    dt = ts[2] - ts[1]
+
+    # Defining our space:
+    xrange0 = -10 # meters
+    xrange1 = 10
+    yrange0 = -10
+    yrange1 = 10
+
+    # Picking particle positions:
+    xpos = rand(N) .* (xrange1 - xrange0) .+ xrange0
+    ypos = rand(N) .* (yrange1 - yrange0) .+ yrange0
+    positions = cat(xpos, ypos, dims=2)
+
+    print("Initializing...\n")
+
+
+    # Picking initial velocities:
+    vrs = 0.01  # initial velocity scaler
+    xv0 = rand(N) .* (xrange1 - xrange0)*vrs .+ xrange0*vrs
+    yv0 = rand(N) .* (yrange1 - yrange0)*vrs .+ yrange0*vrs
+    velocities = cat(xv0, yv0, dims=2)
+
+    # Defining particle sizes
+    diameters = masses.*0.3 # The largest diameters will be mf x 0.3 meters
+
+    # Starting the main loop:
+
+    Nbody_animation = @animate for t in ts[2:end]
+        # print("Rendering t = $t...\n")  # to track process
+
+        for i in range(1, N)
+			# i is the particle being attracted by all others
+            accelerationij = zeros(2)
+            posxi = positions[i, 1]
+            posyi = positions[i, 2]
+
+            for j in range(1, N)
+                # j are the particles attracting i 
+                posxj = positions[j, 1]
+                posyj = positions[j, 2]
+
+                rx = posxj - posxi
+                ry = posyj - posyi
+                anti_infinity = 0.1  # a factor to prevent 1/r^2 from going to infty
+                rsq = rx^2 + ry^2 + anti_infinity^2
+
+                accelerationij[1] += G * rx * masses[j] / (rsq^1.5)
+                accelerationij[2] += G * ry * masses[j] / (rsq^1.5)
+
+            end
+            positions[i, 1] += 0.5*accelerationij[1]*dt^2+velocities[i, 1]*dt
+            positions[i, 2] += 0.5*accelerationij[2]*dt^2+velocities[i, 2]*dt
+
+            velocities[i, 1] += accelerationij[1] * dt
+            velocities[i, 2] += accelerationij[2] * dt
+        end
+        # print("\n\n\n $t, \n$positions")
+
+        plot_pos = scatter(positions[:,1], positions[:,2],
+            xlims=(xrange0,xrange1), ylims=(yrange0,yrange1),
+            legend=false, grid=false, showaxis=false, ticks=false)
+
+	end every 10
+
+    gif(Nbody_animation, fps=24)
+
 end
+
+
+# ╔═╡ b607b45a-9575-45cd-96f0-9de71daba823
+md"""
+Rendering for 100 seconds with 50 particles and repeating with a massive particle dropped in at the start (included seperately in the zip), see if we get any stable orbits (we kinda do)! 8)
+"""
+
+# ╔═╡ 179ddc4d-3de5-46e7-9b55-23df04360852
+md"""
+# References:
+
+	- Zwart, McMillan - Astrophysical Recipes: The art of AMUSE
+
+		- Chapter 2 (Gravitational Dynamics)
+
+- This article: https://medium.com/swlh/create-your-own-n-body-simulation-with-python-f417234885e9
+"""
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -505,9 +621,9 @@ uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 
 [[deps.NaNMath]]
-git-tree-sha1 = "737a5957f387b17e74d4ad2f440eb330b39a62c5"
+git-tree-sha1 = "b086b7ea07f8e38cf122f5016af580881ac914fe"
 uuid = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
-version = "1.0.0"
+version = "0.3.7"
 
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
@@ -1008,7 +1124,11 @@ version = "0.9.1+5"
 
 # ╔═╡ Cell order:
 # ╠═e14502c2-c3d0-11ec-3420-3357bc4cd3df
+# ╟─3fd6bfea-fd1e-4b1f-813e-2780f9d3a2e0
 # ╠═2982b49d-5ee8-43d0-a6e0-31287b1f5db6
-# ╠═9cb10a87-1b4b-45c9-9f3c-5b567a0816d1
+# ╟─1b74b1c6-7ac1-451c-a375-c4dc48f91902
+# ╠═4f4434eb-72c0-4f4c-bae6-f11218e6802b
+# ╟─b607b45a-9575-45cd-96f0-9de71daba823
+# ╟─179ddc4d-3de5-46e7-9b55-23df04360852
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
